@@ -97,8 +97,7 @@ def list_files_in_folder(folder_id, archivos):
     parents = []
     for item in items:
         validate_model(item["name"], item["id"])
-    print(f'los parents son: {models_catalog}')
-    
+   
     for item in items:
         if item["mimeType"] == "application/vnd.google-apps.folder":
             print(f'Entrando a carpeta una carpeta con ID: {item["name"]}')
@@ -124,10 +123,8 @@ def list_files_in_folder(folder_id, archivos):
             print(f'Archivo {item["name"]} subido a S3.')
             # Obtengo el id de la carpeta padre
             parent = item['parents']
-            #model=get_Product(parent)
-            model='model'
-
-
+            model= get_model(parent[0])
+            #model='model'
             data = {
                 'type':s3_file_key.split(".")[1],
                 'fileName':file_name,
@@ -168,20 +165,18 @@ Crear imagenes tamaño md y small
 def validate_model(modelName, modelId):
     for i in range(len(models_catalog)):
         if models_catalog[i]['name'] == modelName:
-            nombre=models_catalog[i]['name']
-            print(f'el valor: {nombre} es igual al valor: {modelName}')
-            print(f'guardando: {modelId} en el i: {i}') 
             models_catalog[i]['google_id'] = modelId
             break
 
-    
-
-def validate_parents(parents, parentid):
-    if parentid in parents: 
-        print(f' Esta carpeta esta dentro de los modelos {parentid}')
-        return True
-    else:
-        return False
+def get_model(parentid):
+    print(f'parentid es: {parentid} ')
+    for i in range(len(models_catalog)):
+        valor=models_catalog[i]['google_id']
+        print(f'comparando {valor} con {parentid} ')
+        if models_catalog[i]['google_id'] == parentid:
+            print(f'{valor} es igual a {parentid} ')
+            return models_catalog[i]['model']
+            break
 
 def save_files_into_db(data):
     """Lista todos los archivos y carpetas en la carpeta especificada en Google Drive"""
