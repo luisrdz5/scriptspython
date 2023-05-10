@@ -88,7 +88,7 @@ models_catalog = models_catalog_str
 # Crear una instancia de la API de Google Drive
 service = build("drive", "v3", credentials=creds)
 
-def list_files_in_folder(folder_id, archivos):
+def list_files_in_folder(folder_id, archivos, parent="" ):
     """Lista todos los archivos y carpetas en la carpeta especificada en Google Drive"""
     archivosinternos=0
     query = f"'{folder_id}' in parents and trashed = false"
@@ -101,13 +101,13 @@ def list_files_in_folder(folder_id, archivos):
     for item in items:
         if item["mimeType"] == "application/vnd.google-apps.folder":
             print(f'Entrando a carpeta una carpeta con ID: {item["name"]}')
-            archivos= archivos + list_files_in_folder(item["id"], archivos)
+            archivos= archivos + list_files_in_folder(item["id"], archivos, item['parents'][0])
         else:
-            print(f'Descargando el archivo: {item}')
+            print(f'Descargando el archivo: {item["name"]}')
             file_id = item['id']
             file_name = item['name']
             file_name = file_name.replace('_Ig.', '_lg.')
-            print(f' el archivo: {file_name}  tiene un mimetype : {item["mimeType"]}')
+            #print(f' el archivo: {file_name}  tiene un mimetype : {item["mimeType"]}')
             # Obtener el contenido del archivo y convertir a png
             file_content = service.files().get_media(fileId=file_id).execute()
             img = Image.open(io.BytesIO(file_content))
@@ -118,12 +118,11 @@ def list_files_in_folder(folder_id, archivos):
             s3_file_key = f'{bucket_name}/{file_name.split(".")[0]}.png'  # Cambiar la extensión del archivo a png
             s3_client.upload_fileobj(png_content, bucket_name, s3_file_key, ExtraArgs={'ACL': 'public-read'}) 
             url=f'https://{bucket_name}.s3.amazonaws.com/{s3_file_key}'
-            print(f'aqui esta el resultado: {url}')
+            #print(f'aqui esta el resultado: {url}')
             archivos += 1
             print(f'Archivo {item["name"]} subido a S3.')
             # Obtengo el id de la carpeta padre
-            parent = item['parents']
-            model= get_model(parent[0])
+            model= get_model(parent)
             #model='model'
             data = {
                 'type':s3_file_key.split(".")[1],
@@ -172,9 +171,9 @@ def get_model(parentid):
     print(f'parentid es: {parentid} ')
     for i in range(len(models_catalog)):
         valor=models_catalog[i]['google_id']
-        print(f'comparando {valor} con {parentid} ')
+        #print(f'comparando {valor} con {parentid} ')
         if models_catalog[i]['google_id'] == parentid:
-            print(f'{valor} es igual a {parentid} ')
+            #print(f'{valor} es igual a {parentid} ')
             return models_catalog[i]['model']
             break
 
