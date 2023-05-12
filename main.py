@@ -100,7 +100,7 @@ conn = psycopg2.connect(
 )
 
 
-def list_files_in_folder(folder_id, archivos, parent="" ):
+def list_files_in_folder(folder_id, archivos, parent="", product="" ):
     """Lista todos los archivos y carpetas en la carpeta especificada en Google Drive"""
     archivosinternos=0
     query = f"'{folder_id}' in parents and trashed = false"
@@ -113,13 +113,12 @@ def list_files_in_folder(folder_id, archivos, parent="" ):
     for item in items:
         if item["mimeType"] == "application/vnd.google-apps.folder":
             print(f'Entrando a carpeta una carpeta con ID: {item["name"]}')
-            archivos= archivos + list_files_in_folder(item["id"], archivos, item['parents'][0])
+            archivos= archivos + list_files_in_folder(item["id"], archivos, item['parents'][0], item["name"])
         else:
             print(f'Descargando el archivo: {item["name"]}')
             file_id = item['id']
             file_name = item['name']
             file_name = file_name.replace('_Ig.', '_lg.')
-            #print(f' el archivo: {file_name}  tiene un mimetype : {item["mimeType"]}')
             # Obtener el contenido del archivo y convertir a png
             file_content = service.files().get_media(fileId=file_id).execute()
             img = Image.open(io.BytesIO(file_content))
@@ -130,22 +129,21 @@ def list_files_in_folder(folder_id, archivos, parent="" ):
             s3_file_key = f'{bucket_name}/{file_name.split(".")[0]}.png'  # Cambiar la extensión del archivo a png
             s3_client.upload_fileobj(png_content, bucket_name, s3_file_key, ExtraArgs={'ACL': 'public-read'}) 
             url=f'https://{bucket_name}.s3.amazonaws.com/{s3_file_key}'
-            #print(f'aqui esta el resultado: {url}')
             archivos += 1
             print(f'Archivo {item["name"]} subido a S3.')
             # Obtengo el id de la carpeta padre
             model= get_model(parent)
-            #model='model'
             data = {
                 'type':s3_file_key.split(".")[1],
                 'fileName':file_name,
                 'url':url,
-                'product':'',
+                'product':model[1],
                 'sku': file_name.split("_")[0],
-                'size':file_name.split("_")[2],
-                'model': model
+                'size':file_name.split("_")[2].split(".")[0],
+                'model': model[0],
+                'tabla': model[2]
             }
-            save_files_into_db(data)
+            verify_data(data)
     return archivosinternos
 
 '''
@@ -184,8 +182,34 @@ def get_model(parentid):
     for i in range(len(models_catalog)):
         valor=models_catalog[i]['google_id']
         if models_catalog[i]['google_id'] == parentid:
-            return models_catalog[i]['model']
+            #return models_catalog[i]['model']
+            data = [models_catalog[i]['model'], models_catalog[i]['name'], models_catalog[i]['tabla']]
+            return data
             break
+
+def verify_data(data):
+    print(f'validando sku : {data["sku"]}')  
+    tabla = data["tabla"]
+    cadena = f'select sku from "{tabla}" where sku=\'{data["sku"]}\';' 
+    print(cadena)
+    try:
+        # busco el sku en el modelo 
+        cur = conn.cursor()
+        cur.execute(cadena) 
+        sku = cur.fetchone()   
+        if(sku):
+            #print(f' sku encontrado : {sku[0]}')
+            save_files_into_db(data)
+        else:
+            print(f' sku NO encontrado : {data["sku"]}')
+        #cur.execute('INSERT INTO "DetalleFotos" ( type, "fileName", url, product, sku, size, model, created_at) VALUES (%s, %s ,%s, %s ,%s, %s, %s , NOW());', (data["type"], data["fileName"], data["url"], data["product"], data["sku"], data["size"] ,data["model"]))
+        conn.commit()  
+        cur.close()       
+    except (Exception, psycopg2.DatabaseError) as error:
+        print(error)
+
+    
+
 
 def save_files_into_db(data):
     """Lista todos los archivos y carpetas en la carpeta especificada en Google Drive"""
