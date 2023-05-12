@@ -6,6 +6,8 @@ import boto3
 import io
 from PIL import Image
 import json
+import psycopg2
+import argparse
 
 # Cargar variables de entorno desde el archivo .env
 load_dotenv()
@@ -87,6 +89,16 @@ models_catalog = models_catalog_str
 
 # Crear una instancia de la API de Google Drive
 service = build("drive", "v3", credentials=creds)
+
+
+# Establecer la conexión con la base de datos
+conn = psycopg2.connect(
+    host= os.environ["DB_HOST"],
+    database= os.environ["DB_NAME"],
+    user= os.environ["DB_USER"],
+    password= os.environ["DB_PASSWORD"]
+)
+
 
 def list_files_in_folder(folder_id, archivos, parent="" ):
     """Lista todos los archivos y carpetas en la carpeta especificada en Google Drive"""
@@ -171,21 +183,49 @@ def get_model(parentid):
     print(f'parentid es: {parentid} ')
     for i in range(len(models_catalog)):
         valor=models_catalog[i]['google_id']
-        #print(f'comparando {valor} con {parentid} ')
         if models_catalog[i]['google_id'] == parentid:
-            #print(f'{valor} es igual a {parentid} ')
             return models_catalog[i]['model']
             break
 
 def save_files_into_db(data):
     """Lista todos los archivos y carpetas en la carpeta especificada en Google Drive"""
-    print(data)
+    try:
+        # inserto en tabla CatalogoFotos y DetalleFotos
+        cur = conn.cursor()
+        cur.execute('INSERT INTO "CatalogoFotos" (sku, model, created_at) VALUES (%s, %s , NOW());', (data["sku"], data["model"]))    
+        cur.execute('INSERT INTO "DetalleFotos" ( type, "fileName", url, product, sku, size, model, created_at) VALUES (%s, %s ,%s, %s ,%s, %s, %s , NOW());', (data["type"], data["fileName"], data["url"], data["product"], data["sku"], data["size"] ,data["model"]))
+        conn.commit()  
+        cur.close()       
+    except (Exception, psycopg2.DatabaseError) as error:
+        print(error)
+    
 
-# Ejecutar la función para listar los archivos en la carpeta compartida
+def truncate_tables():
+    print("Truncando tablas CatalogoFotos y DetalleFotos ")
+    cur = conn.cursor()
+    try:
+        cur.execute('TRUNCATE TABLE "CatalogoFotos"')
+        conn.commit()
+        cur.execute('TRUNCATE TABLE "DetalleFotos"')
+        conn.commit()
+        cur.close()
+    except (Exception, psycopg2.DatabaseError) as error:
+        print(error)
 
 def main():
+    # Definir los argumentos que puede recibir el script
+    parser = argparse.ArgumentParser(description='Este script Toma imagenes cargadas en una carpeta de google drive y las sube a s3 ')
+    parser.add_argument('action', type=str, choices=['new', 'add'], help='Acción a realizar')
+    args = parser.parse_args()
     archivos = 0
-    archivos = list_files_in_folder(folder_id,  archivos )
+    if args.action == 'new':
+        print('Se van a truncar las tablas de fotos y se cargaran todas nuevamente .... ')
+        truncate_tables()
+        archivos = list_files_in_folder(folder_id,  archivos )
+
+    if args.action == 'new':
+        print('Se van a agregar las nuevas fotos a las tablas .... ')
+        archivos = list_files_in_folder(folder_id,  archivos )
     print(f'Se pocesaron: {archivos} archivos')
 
 if __name__ == "__main__":
