@@ -8,10 +8,14 @@ from PIL import Image
 import json
 import psycopg2
 import argparse
+import datetime
+import uuid
 
 # Cargar variables de entorno desde el archivo .env
 load_dotenv()
 
+
+uuid_log= str(uuid.uuid4())
 # Obtener credenciales de la cuenta de servicio desde las variables de entorno
 creds = service_account.Credentials.from_service_account_info({
     "type": os.environ["TYPE"],
@@ -80,12 +84,9 @@ models_catalog_str= [
         "google_id": ""
     }                       
 ]
-# Cargar el JSON en una variable como una lista de diccionarios
 
-#models_catalog = json.loads(models_catalog_str)
 
 models_catalog = models_catalog_str
-
 
 # Crear una instancia de la API de Google Drive
 service = build("drive", "v3", credentials=creds)
@@ -115,57 +116,50 @@ def list_files_in_folder(folder_id, archivos, parent="", product="" ):
             print(f'Entrando a carpeta una carpeta con ID: {item["name"]}')
             archivos= archivos + list_files_in_folder(item["id"], archivos, item['parents'][0], item["name"])
         else:
-            print(f'Descargando el archivo: {item["name"]}')
             file_id = item['id']
             file_name = item['name']
             file_name = file_name.replace('_Ig.', '_lg.')
-            # Obtener el contenido del archivo y convertir a png
-            file_content = service.files().get_media(fileId=file_id).execute()
-            img = Image.open(io.BytesIO(file_content))
-            png_content = io.BytesIO()
-            img.save(png_content, format='png', optimize=True)
-            png_content.seek(0)
-            # Cargar el archivo png en S3
-            s3_file_key = f'{bucket_name}/{file_name.split(".")[0]}.png'  # Cambiar la extensión del archivo a png
-            s3_client.upload_fileobj(png_content, bucket_name, s3_file_key, ExtraArgs={'ACL': 'public-read'}) 
-            url=f'https://{bucket_name}.s3.amazonaws.com/{s3_file_key}'
-            archivos += 1
-            print(f'Archivo {item["name"]} subido a S3.')
-            # Obtengo el id de la carpeta padre
-            model= get_model(parent)
-            data = {
-                'type':s3_file_key.split(".")[1],
-                'fileName':file_name,
-                'url':url,
-                'product':model[1],
-                'sku': file_name.split("_")[0],
-                'size':file_name.split("_")[2].split(".")[0],
-                'model': model[0],
-                'tabla': model[2]
-            }
-            verify_data(data)
+            #validamos la estructura 
+            try:
+                # Obtener el contenido del archivo y convertir a png
+                file_content = service.files().get_media(fileId=file_id).execute()
+                img = Image.open(io.BytesIO(file_content))
+                png_content = io.BytesIO()
+                img.save(png_content, format='png', optimize=True)
+                png_content.seek(0)
+                # Cargar el archivo png en S3
+                s3_file_key = f'{bucket_name}/{file_name.split(".")[0]}.png'  # Cambiar la extensión del archivo a png
+                s3_client.upload_fileobj(png_content, bucket_name, s3_file_key, ExtraArgs={'ACL': 'public-read'}) 
+                url=f'https://{bucket_name}.s3.amazonaws.com/{s3_file_key}'
+                archivos += 1
+                print(f'Archivo {item["name"]} subido a S3.')
+                # Obtengo el id de la carpeta padre
+                model= get_model(parent)
+                print(f'Descargando el archivo: {file_name}')
+                size = file_name.split("_")[2].split(".")[0]
+                sku = file_name.split("_")[0]
+                id_image = file_name.split("_")[1].split(".")[0]
+                data = {
+                    'type':s3_file_key.split(".")[1],
+                    'fileName':file_name,
+                    'url':url,
+                    'product':model[1],
+                    'sku': sku,
+                    'size': size,
+                    'model': model[0],
+                    'tabla': model[2],
+                    'id_image': id_image,
+                }
+                verify_data(data)
+            except (Exception) as error:
+                log = f' el archivo : {file_name} genero el error: {error} '
+                write_log(log)
     return archivosinternos
 
 '''
 
 
-Que necesitamos guardar en la BD 
-- tipo
-- Nombre del archivo
-- Liga
-- Producto
-- sku
-- tamaño
-
-
 * Se debe hacer catalogo de tamaños
-* Se debe generar catalogo de Carpeta -> model 
-
-pasos a seguir 
-
-- consultar catalogo de carpetas para obtener el modelo
-- guardar en tabla de imagenes
-
 ** Plus
 Crear imagenes tamaño md y small
 
@@ -198,10 +192,14 @@ def verify_data(data):
         cur.execute(cadena) 
         sku = cur.fetchone()   
         if(sku):
-            #print(f' sku encontrado : {sku[0]}')
-            save_files_into_db(data)
+            
+            id_foto = save_files_into_db(data)
+            print(f' id_foto encontrado : {id_foto}')
+            cadena = f'UPDATE "{tabla}" SET "fotosId"={id_foto}  where sku=\'{data["sku"]}\';' 
+            cur.execute(cadena)
         else:
-            print(f' sku NO encontrado : {data["sku"]}')
+            log = f' sku NO encontrado : {data["sku"]} en el producto: {data["product"]} en la tabla: {tabla} '
+            write_log(log)
         #cur.execute('INSERT INTO "DetalleFotos" ( type, "fileName", url, product, sku, size, model, created_at) VALUES (%s, %s ,%s, %s ,%s, %s, %s , NOW());', (data["type"], data["fileName"], data["url"], data["product"], data["sku"], data["size"] ,data["model"]))
         conn.commit()  
         cur.close()       
@@ -216,13 +214,24 @@ def save_files_into_db(data):
     try:
         # inserto en tabla CatalogoFotos y DetalleFotos
         cur = conn.cursor()
-        cur.execute('INSERT INTO "CatalogoFotos" (sku, model, created_at) VALUES (%s, %s , NOW());', (data["sku"], data["model"]))    
-        cur.execute('INSERT INTO "DetalleFotos" ( type, "fileName", url, product, sku, size, model, created_at) VALUES (%s, %s ,%s, %s ,%s, %s, %s , NOW());', (data["type"], data["fileName"], data["url"], data["product"], data["sku"], data["size"] ,data["model"]))
+        cur.execute('INSERT INTO "CatalogoFotos" (sku, model, created_at) VALUES (%s, %s , NOW()) RETURNING id ;', (data["sku"], data["model"]))    
+        # Obtener el ID del registro insertado
+        id_insertado = cur.fetchone()[0]
+        cur.execute('INSERT INTO "DetalleFotos" ( type, "fileName", url, product, sku, size, model, "idCatalogoFotos", created_at) VALUES (%s, %s ,%s, %s ,%s, %s, %s, %s , NOW());', (data["type"], data["fileName"], data["url"], data["product"], data["sku"], data["size"] ,data["model"], id_insertado))
         conn.commit()  
-        cur.close()       
+        cur.close()  
+        return id_insertado     
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
     
+
+def write_log(cadena):
+    fecha = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    nombre_archivo = 'logs/log_' + fecha[:10] + uuid_log + '.txt'  
+    # crea la carpeta si no existe
+    os.makedirs(os.path.dirname(nombre_archivo), exist_ok=True) 
+    with open(nombre_archivo, 'a') as archivo:
+        archivo.write(fecha + ': ' + cadena + '\n')
 
 def truncate_tables():
     print("Truncando tablas CatalogoFotos y DetalleFotos ")
