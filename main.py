@@ -5,7 +5,6 @@ from googleapiclient.discovery import build
 import boto3
 import io
 from PIL import Image
-import json
 import psycopg2
 import argparse
 import datetime
@@ -162,7 +161,6 @@ def list_files_in_folder(folder_id, archivos, parent="", product="" ):
 * Se debe hacer catalogo de tamaños
 ** Plus
 Crear imagenes tamaño md y small
-
 '''
 
 def validate_model(modelName, modelId):
@@ -184,15 +182,12 @@ def get_model(parentid):
 def verify_data(data):
     print(f'validando sku : {data["sku"]}')  
     tabla = data["tabla"]
-    cadena = f'select sku from "{tabla}" where sku=\'{data["sku"]}\';' 
-    print(cadena)
     try:
         # busco el sku en el modelo 
         cur = conn.cursor()
         cur.execute(cadena) 
         sku = cur.fetchone()   
         if(sku):
-            
             id_foto = save_files_into_db(data)
             print(f' id_foto encontrado : {id_foto}')
             cadena = f'UPDATE "{tabla}" SET "fotosId"={id_foto}  where sku=\'{data["sku"]}\';' 
@@ -205,9 +200,6 @@ def verify_data(data):
         cur.close()       
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
-
-    
-
 
 def save_files_into_db(data):
     """Lista todos los archivos y carpetas en la carpeta especificada en Google Drive"""
