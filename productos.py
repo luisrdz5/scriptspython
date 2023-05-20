@@ -6,6 +6,8 @@ from oauth2client.service_account import ServiceAccountCredentials
 import gspread
 import pandas as pd
 import psycopg2
+import datetime
+import shortuuid
 
 # Cargar variables de entorno desde el archivo .env
 load_dotenv()
@@ -125,12 +127,11 @@ products_catalog_str= [
 ]
 
 
+#Generamos la informacion del archivo de logs 
 
-
-
-
-
-
+uuid_log= str(shortuuid.ShortUUID().random(length=6))
+fecha = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
+nombre_archivo = 'logs/validacion_archivos/log_' + fecha[:10] + uuid_log + '.txt' 
 
 def get_files(folder_id):
     query = f"'{folder_id}' in parents and trashed = false"
@@ -141,7 +142,7 @@ def get_files(folder_id):
     
     for item in items:
         if item["mimeType"] != "application/vnd.google-apps.folder":
-            print(f" {i+1} .- {item['name']},  el nombre del id es: {item['id']}")
+            print(f" {i+1} .- {item['name']}")
             file = {
                     'id':i+1,
                     'uuid':item["id"],
@@ -168,68 +169,144 @@ def validate_file(idFile, files):
     try:
         file = get_file_object(idFile, files)
         client = gspread.authorize(credsSheets)
-        #id_archivo=file["uuid"]
         nombre_archivo=file["name"]
         print(f'validando : {nombre_archivo}')        
-        fileSheet = client.open(nombre_archivo).get_worksheet(0)
-        #print(f'fileSheet es {fileSheet}')
-        #hoja_calculo = fileSheet.sheet1
+        fileSheet = client.open(nombre_archivo).sheet1
         tableSheet = get_table_sheet(nombre_archivo)
-        print (f'tablesheet es: {tableSheet["table"]}')
         filas = fileSheet.get_all_values()
-        #print(f'filas es: {filas}')
-        df = pd.DataFrame(filas[1:], columns=filas[0]) 
-        validate = validar_dataframe(df, tableSheet["table"] )
+        
+        validate = validar_dataframe(filas, tableSheet["table"], nombre_archivo )
+
         if validate :
             print (f"Ha sido correcta la validación del archivo {nombre_archivo} se ha validado contra la tabla {tableSheet['table']}")
         else:
             print (f"No ha sido correcta la validación del archivo {nombre_archivo} se ha validado contra la tabla {tableSheet['table']}")
-
         return validate
-
-        #for index, fila in enumerate(filas):
-            # Realizar acciones con cada fila
-        #    if index != 0:
-        #        print(fila)
     except (Exception) as error:
         print(error)
-
+        return error
 
     # prompt utilizado como lees archivos de google sheets en python para validar si pueden ser insertados en una bd postgresql
 
-
-def validar_dataframe(df, table ):
+def validar_dataframe(filas, table, nombre_archivo):
     error = False
+    errores = 0 
+    cadena = f" ******* Se ha iniciado la validación del archivo {nombre_archivo} contra la tabla {table} ********** \n"
+    write_log(cadena)
     try:
         # Realiza las validaciones en el DataFrame
-        # Puedes agregar aquí tu lógica de validación
         cursor = conn.cursor()
-        # Ejemplo: Verifica si todas las columnas existen en la tabla de la base de datos
-        query= f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table}'"
-        print(f"query es: {query}")
+        query= f"SELECT column_name, data_type  FROM information_schema.columns WHERE table_name = '{table}'"
         cursor.execute(query)
-        columnas_tabla = [registro[0] for registro in cursor.fetchall()]
-        #print(f"Se encontraron estas columnas en la tabla: {columnas_tabla}")
-
-        
-        # Realiza la validación fila por fila
-        for index, fila in df.iterrows():
-            # Verifica si cada columna existe en la tabla de la base de datos
-            print(f"validando el id {index} ")
-            columnas_faltantes = set(fila.index.str.lower()) - set(columnas_tabla)
-            if columnas_faltantes:
-                print("Las siguientes columnas faltan en la tabla de la base de datos:", columnas_faltantes)
+        schema = cursor.fetchall()
+        num_columns_postgres = len(schema)
+        for i, row in enumerate(filas[1:], start=2):
+            # Comprueba si el número de columnas en la fila coincide con el número de columnas en la tabla PostgreSQL
+            if len(row) != num_columns_postgres:
+                write_log(f" La fila {i} no coincide con el número de columnas en la tabla PostgreSQL. ya que el google sheet tiene {len(row)} y la base de datos tiene {num_columns_postgres}")
+                errores = errores + 1
                 error = True
+                continue
+            else:
+                 write_log(f"La fila {i} si coincide con el número de columnas en la tabla PostgreSQL.")
 
-        # Si todas las validaciones pasan, retorna True
+            for j, value in enumerate(row):
+                column_name = schema[j][0]
+                column_type = schema[j][1]
+
+                # Si el valor está vacío, saltamos la validación
+                if value == '':
+                    continue
+                
+                if column_type == "integer":
+                    try:
+                        int(value)
+                    except ValueError:
+                        write_log(f"El valor {value} en la fila {i}, columna {column_name} no es un integer válido.")
+                        error = True
+                        errores = errores + 1
+                elif column_type == "text":
+                    if not isinstance(value, str):
+                        write_log(f"El valor {value} en la fila {i}, columna {column_name} no es un string válido.")
+                        error = True
+                        errores = errores + 1
+                elif column_type == "boolean":
+                    if value.lower() not in ["true", "false", "1", "0"]:
+                        write_log(f"El valor {value} en la fila {i}, columna {column_name} no es un boolean válido.")
+                        error = True
+                        errores = errores + 1
+                # Se pueden agregar aquí más tipos de datos según sea necesario
+
         cursor.close()
-        conn.close()        
+        conn.close()     
+        # Si todas las validaciones pasan, retorna True  
+        if error == False :
+          write_log(f" ******* No se encontro error en la validación del archivo {nombre_archivo} contra la tabla {table} ********** \n")
+        else:
+            write_log(f" ******* Se encontraron {errores} errores en la validación del archivo {nombre_archivo} contra la tabla {table} ********** \n")
         return not error
     except (Exception) as error:
         print(error)
         return False
 
 
+
+def upload_file(idFile, files):
+    try:
+        file = get_file_object(idFile, files)
+        client = gspread.authorize(credsSheets)
+        nombre_archivo=file["name"]
+        print(f'cargando : {nombre_archivo}')        
+        fileSheet = client.open(nombre_archivo).sheet1
+        tableSheet = get_table_sheet(nombre_archivo)
+        filas = fileSheet.get_all_values()
+        
+        validate = update_dataframe(filas, tableSheet["table"], nombre_archivo )
+
+        if validate :
+            print (f"Ha sido correcta la validación del archivo {nombre_archivo} se ha validado contra la tabla {tableSheet['table']}")
+        else:
+            print (f"No ha sido correcta la validación del archivo {nombre_archivo} se ha validado contra la tabla {tableSheet['table']}")
+        return validate
+    except (Exception) as error:
+        print(error)
+        return error
+
+
+def update_dataframe(filas, table, nombre_archivo):
+    error = False
+    errores = 0 
+    cadena = f" ******* Se ha iniciado la inserción del archivo {nombre_archivo} en la tabla {table} ********** \n"
+    write_log(cadena)
+    try:
+        cur = conn.cursor()
+        # Obtén el esquema de la tabla en PostgreSQL
+        cur.execute("""
+            SELECT column_name
+            FROM information_schema.columns 
+            WHERE table_name = %s;
+        """, (table,))
+        schema = cur.fetchall()
+        
+        # Cierra el cursor y la conexión
+
+
+        column_names = [col[0] for col in schema]
+        
+        # Preparación de las declaraciones INSERT
+        insert_statements = []
+        for row in filas[1:]:  # Ignora la primera fila (encabezados)
+            # Las comillas simples dentro de los valores deben escaparse para evitar errores de sintaxis SQL
+            escaped_values = [str(value).replace("'", "''") for value in row]
+            # Utiliza la función format para insertar los valores en la declaración SQL
+            stmt = "INSERT INTO {} ({}) VALUES ({});".format(table, ', '.join(column_names), ', '.join(["'" + value + "'" for value in escaped_values]))
+            insert_statements.append(stmt)
+        cur.close()
+        conn.close()
+        return insert_statements
+    except (Exception) as error:
+        print(error)
+        return False
 
 
 def get_file_object(idFile, files):
@@ -244,6 +321,18 @@ def get_table_sheet(nombre_archivo):
             return products_catalog_str[i]
     return
 
+def write_log(cadena):
+    # crea la carpeta si no existe
+    os.makedirs(os.path.dirname(nombre_archivo), exist_ok=True) 
+    with open(nombre_archivo, 'a') as archivo:
+        archivo.write(fecha + ': ' + cadena + '\n')
+
+def clear_screen():
+    # Comprueba si el sistema operativo es Windows
+    if os.name == 'nt':
+        os.system('cls')
+    else:
+        os.system('clear')
 
 def main():
     print(f'this is an aplication that  walks through the product files')
@@ -252,11 +341,13 @@ def main():
     files = get_files(folder_id)
     #print(f'files contiene: {files}')
     idFile = input("Please select an option : ")
+    clear_screen()
     if str(idFile) == 'A' or str(idFile) == 'a' or validate_folder(idFile, files):
         print(f'What do you want to do:')
         print(f'1.-Validate')
         print(f'2.-Validate / Insert')
         option = input("Please select an option: ")
+        clear_screen()
         if option.isnumeric():
             if int(option) == 1 and (str(idFile) == 'A' or str(idFile) == 'a'):
                 print('Validar todos')
@@ -267,12 +358,16 @@ def main():
                 print('Validar y aplicar todos')
                 #validate_file()
             if int(option) == 2 and ( str(idFile) != 'A' and str(idFile) != 'a' ):
-                print(f'Validar y aplicar {idFile}')
+                print(f'Validando y aplicando {idFile}')
+                validation=validate_file(idFile, files)
+                if(validation == True):
+                    upload_file(idFile, files)
+                else:
+                    print(f'no se puede procesar el archivo {idFile} por que la validación fue incorrecta')
         else:
             print(f'Opcion no valida')
     else:
         print(f'Opcion no valida')
-
 
 if __name__ == "__main__":
     main()
