@@ -182,6 +182,7 @@ def get_model(parentid):
 def verify_data(data):
     print(f'validando sku : {data["sku"]}')  
     tabla = data["tabla"]
+    cadena = f'select sku from "{tabla}" where sku=\'{data["sku"]}\';' 
     try:
         # busco el sku en el modelo 
         cur = conn.cursor()

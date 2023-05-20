@@ -237,8 +237,7 @@ def validar_dataframe(filas, table, nombre_archivo):
                         errores = errores + 1
                 # Se pueden agregar aquí más tipos de datos según sea necesario
 
-        cursor.close()
-        conn.close()     
+        cursor.close()  
         # Si todas las validaciones pasan, retorna True  
         if error == False :
           write_log(f" ******* No se encontro error en la validación del archivo {nombre_archivo} contra la tabla {table} ********** \n")
@@ -261,21 +260,23 @@ def upload_file(idFile, files):
         tableSheet = get_table_sheet(nombre_archivo)
         filas = fileSheet.get_all_values()
         
-        validate = update_dataframe(filas, tableSheet["table"], nombre_archivo )
+        validate = upload_dataframe(filas, tableSheet["table"], nombre_archivo )
 
         if validate :
-            print (f"Ha sido correcta la validación del archivo {nombre_archivo} se ha validado contra la tabla {tableSheet['table']}")
+            print (f"Ha sido correcta la actualización de la tabla {tableSheet['table']} desde el  archivo {nombre_archivo}  ")
+            write_log(f"Ha sido correcta la actualización de la tabla {tableSheet['table']} desde el  archivo {nombre_archivo}  ")
         else:
-            print (f"No ha sido correcta la validación del archivo {nombre_archivo} se ha validado contra la tabla {tableSheet['table']}")
+            print (f"No ha sido correcta la actualización de la tabla {tableSheet['table']} desde el  archivo {nombre_archivo} ")
+            write_log(f"No ha sido correcta la actualización de la tabla {tableSheet['table']} desde el  archivo {nombre_archivo} ")
         return validate
     except (Exception) as error:
         print(error)
         return error
 
 
-def update_dataframe(filas, table, nombre_archivo):
+def upload_dataframe(filas, table, nombre_archivo):
     error = False
-    errores = 0 
+    errores = 0
     cadena = f" ******* Se ha iniciado la inserción del archivo {nombre_archivo} en la tabla {table} ********** \n"
     write_log(cadena)
     try:
@@ -288,25 +289,55 @@ def update_dataframe(filas, table, nombre_archivo):
         """, (table,))
         schema = cur.fetchall()
         
-        # Cierra el cursor y la conexión
-
 
         column_names = [col[0] for col in schema]
         
+        sku_index = column_names.index('sku')
+        idFotos_index = column_names.index('fotosId')
+        if 'id' in column_names:
+            column_names.remove('id')
+
+
         # Preparación de las declaraciones INSERT
         insert_statements = []
         for row in filas[1:]:  # Ignora la primera fila (encabezados)
+            row = row[1:]
+            sku=row[sku_index]
+            idFotos=get_idFotos(sku)
+            row[idFotos_index] = idFotos
             # Las comillas simples dentro de los valores deben escaparse para evitar errores de sintaxis SQL
             escaped_values = [str(value).replace("'", "''") for value in row]
             # Utiliza la función format para insertar los valores en la declaración SQL
-            stmt = "INSERT INTO {} ({}) VALUES ({});".format(table, ', '.join(column_names), ', '.join(["'" + value + "'" for value in escaped_values]))
-            insert_statements.append(stmt)
+            stmt = 'INSERT INTO "{}" ({}) VALUES ({});'.format(table, ', '.join(column_names), ', '.join(['"' + value.replace('\'', '').replace('\"', '') + '"' for value in escaped_values]))
+            print(f'insertando: {stmt}')
+            #insert_statements.append(stmt)
+            cur.execute(stmt)
+            conn.commit()  
+            cur.close()  
+
         cur.close()
-        conn.close()
+        #print (f" se han insertado : {insert_statements}")
         return insert_statements
     except (Exception) as error:
         print(error)
         return False
+
+
+def get_idFotos(sku):
+    try:
+        # busco el sku en el modelo 
+        cadena = f'select id from "CatalogoFotos" where sku=\'{sku}\';' 
+        cur = conn.cursor()
+        cur.execute(cadena) 
+        id = cur.fetchone() 
+        if(id):
+           return id
+        else:
+            return None
+        cur.close()      
+    except (Exception, psycopg2.DatabaseError) as error:
+        print(error)        
+
 
 
 def get_file_object(idFile, files):
@@ -364,6 +395,7 @@ def main():
                     upload_file(idFile, files)
                 else:
                     print(f'no se puede procesar el archivo {idFile} por que la validación fue incorrecta')
+            conn.close()   
         else:
             print(f'Opcion no valida')
     else:
