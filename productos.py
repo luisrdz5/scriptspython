@@ -288,36 +288,44 @@ def upload_dataframe(filas, table, nombre_archivo):
             WHERE table_name = %s;
         """, (table,))
         schema = cur.fetchall()
-        
+        cur.execute(f'TRUNCATE TABLE "{table}"')
+        conn.commit()
 
-        column_names = [col[0] for col in schema]
-        
+        #column_names = [{ col[0]  if k != 'id'} for col in schema]
+        column_names = [col[0] for col in schema if col[0] != "id"]
+        #print (column_names)
         sku_index = column_names.index('sku')
         idFotos_index = column_names.index('fotosId')
-        if 'id' in column_names:
-            column_names.remove('id')
+        column_names = ['"'+ col[0] + '"' for col in schema  if col[0] != "id"]
 
-
-        # Preparación de las declaraciones INSERT
-        insert_statements = []
         for row in filas[1:]:  # Ignora la primera fila (encabezados)
+            #print(f"el row es: {row}")
             row = row[1:]
+            #print(f"el segundo row es: {row}")
             sku=row[sku_index]
             idFotos=get_idFotos(sku)
             row[idFotos_index] = idFotos
             # Las comillas simples dentro de los valores deben escaparse para evitar errores de sintaxis SQL
             escaped_values = [str(value).replace("'", "''") for value in row]
             # Utiliza la función format para insertar los valores en la declaración SQL
-            stmt = 'INSERT INTO "{}" ({}) VALUES ({});'.format(table, ', '.join(column_names), ', '.join(['"' + value.replace('\'', '').replace('\"', '') + '"' for value in escaped_values]))
-            print(f'insertando: {stmt}')
+            cadenaValues = ""
+            for value in escaped_values:
+                if value == '':
+                    if cadenaValues == "":
+                        cadenaValues = cadenaValues + "null"
+                    else:
+                        cadenaValues = cadenaValues + ", "  + "null"
+                else:
+                    cadenaValues = cadenaValues + ", " + "'" + str(value.replace('\'', '').replace('\"', '')) + "'"
+            #stmt = 'INSERT INTO "{}" ({}) VALUES ({});'.format(table, ', '.join(column_names), ', '.join(['"' + value.replace('\'', '').replace('\"', '') + '"' for value in escaped_values]))
+            stmt = 'INSERT INTO "{}" ({}) VALUES ({});'.format(table, ', '.join(column_names), cadenaValues)
+            #print(f'insertando: {stmt}')
             #insert_statements.append(stmt)
             cur.execute(stmt)
             conn.commit()  
-            cur.close()  
-
         cur.close()
         #print (f" se han insertado : {insert_statements}")
-        return insert_statements
+        return not error
     except (Exception) as error:
         print(error)
         return False
@@ -333,7 +341,7 @@ def get_idFotos(sku):
         if(id):
            return id
         else:
-            return None
+            return ""
         cur.close()      
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)        
