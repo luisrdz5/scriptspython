@@ -31,6 +31,7 @@ json_credenciales = {
 creds = service_account.Credentials.from_service_account_info(json_credenciales)
 
 scope = ["https://spreadsheets.google.com/feeds",
+         "https://www.googleapis.com/auth/spreadsheets",
          "https://www.googleapis.com/auth/drive"]
 credsSheets = ServiceAccountCredentials.from_json_keyfile_dict(json_credenciales, scope)
 client = gspread.authorize(creds)
@@ -52,75 +53,57 @@ conn = psycopg2.connect(
 products_catalog_str= [
     {
         "name": "PROCESADOR para csv",
-        "model": "BasesBocina",
         "table":"Procesadores",
     },{
         "name": "AMPLIFICADORES para csv",
-        "model": "BasesBocina",
         "table":"Amplificadores",
     },{
         "name": "Estereos (2022) para csv",
-        "model": "BasesBocina",
         "table":"Estereos",
     },{
         "name": "ACCESORIOS DE INSTALACIÓN para csv",
-        "model": "BasesBocina",
         "table":"Accesorios",
     },{
         "name": "BOCINAS para csv",
-        "model": "BasesBocina",
         "table":"Bocinas",
     },{
         "name": "EPICENTROS para csv",
-        "model": "BasesBocina",
         "table":"Epicentros",
     },{
         "name": "TWEETERS para csv (2022)",
-        "model": "BasesBocina",
         "table":"Tweeters",
     },{
         "name": "BASES para csv",
-        "model": "BasesBocina",
         "table":"Bases",
     },{
         "name": "BASES PARA BOCINA para csv",
-        "model": "BasesBocina",
         "table":"basesBocina",
     },{
         "name": "SET DE MEDIOS para csv",
-        "model": "BasesBocina",
         "table":"SetMedios",
     },{
         "name": "ADAPTADORES DE IMPEDANCIA para csv",
-        "model": "BasesBocina",
         "table":"AdaptadoresImpedancia",
     },{
         "name": "ADAPTADORES ANTENA para csv",
-        "model": "BasesBocina",
         "table":"AdaptadoresAntena",
     },{
         "name": "MEDIOS RANGOS para csv",
-        "model": "BasesBocina",
         "table":"MediosRangos",
     },{
         "name": "WOOFERS para csv",
-        "model": "BasesBocina",
         "table":"Woofers",
     },{
         "name": "CAJONES para csv",
-        "model": "BasesBocina",
         "table":"Cajones",
     },{
         "name": "KIT DE CABLES para csv",
-        "model": "BasesBocina",
         "table":"KitsCables",
     },{
         "name": "ARNESES para csv",
-        "model": "BasesBocina",
         "table":"Arneses",
     },{
         "name": "ECUALIZADORES para csv",
-        "model": "BasesBocina",
         "table":"Ecualizadores",
     },
                    
@@ -153,6 +136,7 @@ def get_files(folder_id):
     return data
 
 
+
 def validate_folder(id, folderobject):
     response=False
     if(id.isnumeric()):
@@ -170,7 +154,7 @@ def validate_file(idFile, files):
         file = get_file_object(idFile, files)
         client = gspread.authorize(credsSheets)
         nombre_archivo=file["name"]
-        print(f'validando : {nombre_archivo}')        
+        print(f'validando : {nombre_archivo}')  
         fileSheet = client.open(nombre_archivo).sheet1
         tableSheet = get_table_sheet(nombre_archivo)
         filas = fileSheet.get_all_values()
@@ -186,7 +170,8 @@ def validate_file(idFile, files):
         print(error)
         return error
 
-    # prompt utilizado como lees archivos de google sheets en python para validar si pueden ser insertados en una bd postgresql
+
+
 
 def validar_dataframe(filas, table, nombre_archivo):
     error = False
