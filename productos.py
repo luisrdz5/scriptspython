@@ -113,8 +113,10 @@ products_catalog_str= [
 #Generamos la informacion del archivo de logs 
 
 uuid_log= str(shortuuid.ShortUUID().random(length=6))
+now = datetime.datetime.now()
 fecha = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
-nombre_archivo = 'logs/validacion_archivos/log_' + fecha[:10] + uuid_log + '.txt' 
+hora =  str(now.hour)+'_'+str(now.second)
+nombre_archivo = 'logs/validacion_archivos/log_' + fecha[:10]+ '-' + hora + '-' + uuid_log + '.txt' 
 
 def get_files(folder_id):
     query = f"'{folder_id}' in parents and trashed = false"
@@ -235,7 +237,7 @@ def validar_dataframe(filas, table, nombre_archivo):
 
 
 
-def upload_file(idFile, files):
+def update_database_with_file(idFile, files):
     try:
         file = get_file_object(idFile, files)
         client = gspread.authorize(credsSheets)
@@ -256,6 +258,7 @@ def upload_file(idFile, files):
         return validate
     except (Exception) as error:
         print(error)
+        write_log(f"Se encontro el siguiente error {error} .")
         return error
 
 
@@ -264,6 +267,7 @@ def upload_dataframe(filas, table, nombre_archivo):
     errores = 0
     cadena = f" ******* Se ha iniciado la inserción del archivo {nombre_archivo} en la tabla {table} ********** \n"
     write_log(cadena)
+    stmt = ''
     try:
         cur = conn.cursor()
         # Obtén el esquema de la tabla en PostgreSQL
@@ -289,19 +293,27 @@ def upload_dataframe(filas, table, nombre_archivo):
             #print(f"el segundo row es: {row}")
             sku=row[sku_index]
             idFotos=get_idFotos(sku)
-            row[idFotos_index] = idFotos
+            row[idFotos_index] = int(idFotos[0])
             # Las comillas simples dentro de los valores deben escaparse para evitar errores de sintaxis SQL
             escaped_values = [str(value).replace("'", "''") for value in row]
+            escaped_values[idFotos_index] = int(idFotos[0])
             # Utiliza la función format para insertar los valores en la declaración SQL
             cadenaValues = ""
+            #print(f"el segundo row es: {row[idFotos_index] } y el row quedo {escaped_values}")
             for value in escaped_values:
-                if value == '':
-                    if cadenaValues == "":
-                        cadenaValues = cadenaValues + "null"
-                    else:
-                        cadenaValues = cadenaValues + ", "  + "null"
+                if cadenaValues == "":
+                    cadenacoma = ''
                 else:
-                    cadenaValues = cadenaValues + ", " + "'" + str(value.replace('\'', '').replace('\"', '')) + "'"
+                     cadenacoma= ", "
+                if value == '':
+                    cadenaValues = cadenaValues + cadenacoma + "null"
+                else:
+                    if isinstance(value, int):
+                        cadenaValues = cadenaValues + cadenacoma + "'" +  str(value) + "'"
+                    else:
+                        cadenaValues = cadenaValues + cadenacoma + "'" + str(value.replace('\'', '').replace('\"', '')) + "'"
+                        
+                   
             #stmt = 'INSERT INTO "{}" ({}) VALUES ({});'.format(table, ', '.join(column_names), ', '.join(['"' + value.replace('\'', '').replace('\"', '') + '"' for value in escaped_values]))
             stmt = 'INSERT INTO "{}" ({}) VALUES ({});'.format(table, ', '.join(column_names), cadenaValues)
             #print(f'insertando: {stmt}')
@@ -313,6 +325,8 @@ def upload_dataframe(filas, table, nombre_archivo):
         return not error
     except (Exception) as error:
         print(error)
+        write_log(f"Se encontro el siguiente error {error} .")
+        write_log(f"Se encontro el error en el siguiente query  {stmt} .")
         return False
 
 
@@ -385,7 +399,7 @@ def main():
                 print(f'Validando y aplicando {idFile}')
                 validation=validate_file(idFile, files)
                 if(validation == True):
-                    upload_file(idFile, files)
+                    update_database_with_file(idFile, files)
                 else:
                     print(f'no se puede procesar el archivo {idFile} por que la validación fue incorrecta')
             conn.close()   
