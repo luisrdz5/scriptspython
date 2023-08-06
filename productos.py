@@ -105,7 +105,33 @@ products_catalog_str= [
     },{
         "name": "ECUALIZADORES para csv",
         "table":"Ecualizadores",
+    },{
+        "name": "AUDIO MARINO para csv",
+        "table":"audioMarino",
+    },{
+        "name": "SEGURIDAD para csv",
+        "table":"seguridad",
+    },{
+        "name": "ACCESORIOS DE CAMIONETA para csv",
+        "table":"accesoriosCamioneta",
+    },{
+        "name": "SERVICIOS para csv",
+        "table":"servicios",
+    },{
+        "name": "VIDEO para csv",
+        "table":"video",
+    },{
+        "name": "ILUMINACION para csv",
+        "table":"iluminacion",
     },
+
+
+
+
+
+
+
+    
                    
 ]
 
@@ -116,7 +142,10 @@ uuid_log= str(shortuuid.ShortUUID().random(length=6))
 now = datetime.datetime.now()
 fecha = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M")
 hora =  str(now.hour)+'_'+str(now.second)
-nombre_archivo = 'logs/validacion_archivos/log_' + fecha[:10]+ '-' + hora + '-' + uuid_log + '.txt' 
+
+
+nombre_archivo = 'logs/validacion_archivos/log_' 
+archivo_uuid= fecha[:10]+ '-' + hora + '-' + uuid_log + '.txt' 
 
 def get_files(folder_id):
     query = f"'{folder_id}' in parents and trashed = false"
@@ -158,6 +187,7 @@ def validate_file(idFile, files):
         nombre_archivo=file["name"]
         print(f'validando : {nombre_archivo}')  
         fileSheet = client.open(nombre_archivo).sheet1
+        print(f'cargando : {fileSheet}')
         tableSheet = get_table_sheet(nombre_archivo)
         filas = fileSheet.get_all_values()
         
@@ -179,6 +209,7 @@ def validar_dataframe(filas, table, nombre_archivo):
     error = False
     errores = 0 
     cadena = f" ******* Se ha iniciado la validación del archivo {nombre_archivo} contra la tabla {table} ********** \n"
+    print(cadena);
     write_log(cadena)
     try:
         # Realiza las validaciones en el DataFrame
@@ -217,6 +248,10 @@ def validar_dataframe(filas, table, nombre_archivo):
                         write_log(f"El valor {value} en la fila {i}, columna {column_name} no es un string válido.")
                         error = True
                         errores = errores + 1
+                    if len(value) > 254:
+                        write_log(f"El valor {value} en la fila {i}, columna {column_name} sobrepasa la longitud maxima de strings (255).")
+                        error = True
+                        errores = errores + 1                        
                 elif column_type == "boolean":
                     if value.lower() not in ["true", "false", "1", "0"]:
                         write_log(f"El valor {value} en la fila {i}, columna {column_name} no es un boolean válido.")
@@ -288,18 +323,34 @@ def upload_dataframe(filas, table, nombre_archivo):
         column_names = ['"'+ col[0] + '"' for col in schema  if col[0] != "id"]
 
         for row in filas[1:]:  # Ignora la primera fila (encabezados)
-            #print(f"el row es: {row}")
             row = row[1:]
-            #print(f"el segundo row es: {row}")
+            #print(f"el row es: {row}")
             sku=row[sku_index]
+            #print(f"sku  es: {row[sku_index]}")
             idFotos=get_idFotos(sku)
-            row[idFotos_index] = int(idFotos[0])
+            #print(f"if foto s es: {int(idFotos[0]) } ")
+            if idFotos == "":
+                row[idFotos_index] = "null"
+            else:
+                row[idFotos_index] = int(idFotos[0])
+            
             # Las comillas simples dentro de los valores deben escaparse para evitar errores de sintaxis SQL
-            escaped_values = [str(value).replace("'", "''") for value in row]
-            escaped_values[idFotos_index] = int(idFotos[0])
+            escaped_values = []
+            for value in row:
+                try:
+                    #print(f"quitando comillas a: {value } ")
+                    escaped_values.append(str(value).replace("'", "''"))
+                except Exception as e:
+                    print(f"Error with value {value}: {e}")
+            #print(f"el segundo row es: {row[idFotos_index] } y el row quedo {escaped_values}")
+            if idFotos == "":
+                escaped_values[idFotos_index] = ""
+            else:
+                escaped_values[idFotos_index] = int(idFotos[0])
+
             # Utiliza la función format para insertar los valores en la declaración SQL
             cadenaValues = ""
-            #print(f"el segundo row es: {row[idFotos_index] } y el row quedo {escaped_values}")
+            
             for value in escaped_values:
                 if cadenaValues == "":
                     cadenacoma = ''
@@ -326,7 +377,7 @@ def upload_dataframe(filas, table, nombre_archivo):
     except (Exception) as error:
         print(error)
         write_log(f"Se encontro el siguiente error {error} .")
-        write_log(f"Se encontro el error en el siguiente query  {stmt} .")
+        write_log(f"Se encontro el error en el siguiente producto  {stmt} .")
         return False
 
 
@@ -373,15 +424,17 @@ def clear_screen():
         os.system('clear')
 
 def main():
+    global nombre_archivo
     print(f'this is an aplication that  walks through the product files')
     print(f'please select the file')
     print(f' A .- All')
     files = get_files(folder_id)
-    #print(f'files contiene: {files}')
     idFile = input("Please select an option : ")
     clear_screen()
     if str(idFile) == 'A' or str(idFile) == 'a' or validate_folder(idFile, files):
-        print(f'What do you want to do:')
+        filename = get_file_object(idFile, files)
+        print(f' Se procesara el archivo : {filename["name"]} ')        
+        print(f'Que quieres hacer:')
         print(f'1.-Validate')
         print(f'2.-Validate / Insert')
         option = input("Please select an option: ")
@@ -391,12 +444,15 @@ def main():
                 print('Validar todos')
                 #validate_file()
             if int(option) == 1 and ( str(idFile) != 'A' and str(idFile) != 'a'):
+                nombre_archivo = nombre_archivo + filename["name"].replace(" ", "_")  + archivo_uuid
                 validate_file(idFile, files)
             if int(option) == 2 and ( str(idFile) == 'A' or str(idFile) == 'a' ):
                 print('Validar y aplicar todos')
                 #validate_file()
             if int(option) == 2 and ( str(idFile) != 'A' and str(idFile) != 'a' ):
                 print(f'Validando y aplicando {idFile}')
+                print(f'Insertando Archivo {filename["name"]} en la base de datos ')
+                nombre_archivo = nombre_archivo + filename["name"].replace(" ", "_") +"_"  + archivo_uuid
                 validation=validate_file(idFile, files)
                 if(validation == True):
                     update_database_with_file(idFile, files)
