@@ -49,7 +49,7 @@ models_catalog_str= [
     {
         "name": "SEGURIDAD",
         "model": "Seguridad",
-        "tabla":"Seguridad",
+        "tabla":"seguridad",
         "google_id": ""
     },
     {
@@ -146,6 +146,36 @@ models_catalog_str= [
         "name": "ADAPTADORES DE IMPEDANCIA",
         "model": "AdaptadoresImpedancia",
         "tabla":"AdaptadoresImpedancia",
+        "google_id": ""
+    },
+    {
+        "name": "ILUMINACION",
+        "model": "Iluminacion",
+        "tabla":"iluminacion",
+        "google_id": ""
+    },
+    {
+        "name": "VIDEO",
+        "model": "Video",
+        "tabla":"video",
+        "google_id": ""
+    },
+    {
+        "name": "AUDIO MARINO",
+        "model": "AudioMarino",
+        "tabla":"audioMarino",
+        "google_id": ""
+    },
+    {
+        "name": "SERVICIOS",
+        "model": "Servicios",
+        "tabla":"servicios",
+        "google_id": ""
+    },
+    {
+        "name": "ACCESORIOS DE CAMIONETA",
+        "model": "AccesoriosCamioneta",
+        "tabla":"accesoriosCamioneta",
         "google_id": ""
     }             
 
@@ -313,6 +343,7 @@ def add_files_in_folder(folder_id, archivos, parent="", product="", name="" ):
             file_name = file_name.replace('_Ig.', '_lg.')
             # Validar si la foto ya existe en AWS S3
             s3_file_key = f'{bucket_name}/{file_name.split(".")[0]}.png'
+            '''
             try:
                 print (f'verificando si existe el archivo : {s3_file_key} en S3')
                 s3_client.head_object(Bucket=bucket_name, Key=s3_file_key)
@@ -325,6 +356,9 @@ def add_files_in_folder(folder_id, archivos, parent="", product="", name="" ):
                 log = f' archivo no encontrado en S3 : {s3_file_key}  '
                 write_log(log)
                 pass            
+            
+            '''
+
             #validamos la estructura 
             try:
                 # Obtener el contenido del archivo y convertir a png

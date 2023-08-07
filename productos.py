@@ -183,11 +183,10 @@ def validate_folder(id, folderobject):
 def validate_file(idFile, files):
     try:
         file = get_file_object(idFile, files)
+        print(f'validando file: {file}')
         client = gspread.authorize(credsSheets)
         nombre_archivo=file["name"]
-        print(f'validando : {nombre_archivo}')  
         fileSheet = client.open(nombre_archivo).sheet1
-        print(f'cargando : {fileSheet}')
         tableSheet = get_table_sheet(nombre_archivo)
         filas = fileSheet.get_all_values()
         
@@ -198,7 +197,7 @@ def validate_file(idFile, files):
         else:
             print (f"No ha sido correcta la validación del archivo {nombre_archivo} se ha validado contra la tabla {tableSheet['table']}")
         return validate
-    except (Exception) as error:
+    except (Exception, gspread.exceptions) as error:
         print(error)
         return error
 
