@@ -79,8 +79,8 @@ products_catalog_str= [
         "name": "BASES PARA BOCINA para csv",
         "table":"basesBocina",
     },{
-        "name": "SET DE MEDIOS para csv",
-        "table":"SetMedios",
+        "name": "COMPONENTES para csv",
+        "table":"Componentes",
     },{
         "name": "ADAPTADORES DE IMPEDANCIA para csv",
         "table":"AdaptadoresImpedancia",
