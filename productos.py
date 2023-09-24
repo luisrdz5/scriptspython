@@ -58,6 +58,9 @@ products_catalog_str= [
         "name": "AMPLIFICADORES para csv",
         "table":"Amplificadores",
     },{
+        "name": "AMPLIFICADORES 3 EN 1 para csv",
+        "table":"Amplificadores3en1",
+    },{
         "name": "Estereos (2022) para csv",
         "table":"Estereos",
     },{
