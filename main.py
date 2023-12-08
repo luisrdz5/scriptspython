@@ -14,7 +14,9 @@ import uuid
 load_dotenv()
 
 
-uuid_log= str(uuid.uuid4())
+short_id= str(uuid.uuid4())
+uuid_log = short_id[:4]
+archivo_procesar = ""
 # Obtener credenciales de la cuenta de servicio desde las variables de entorno
 creds = service_account.Credentials.from_service_account_info({
     "type": os.environ["TYPE"],
@@ -204,6 +206,7 @@ def list_files_in_folder(folder_id, archivos, parent="", product="" ):
     query = f"'{folder_id}' in parents and trashed = false"
     results = service.files().list(q=query, fields="nextPageToken, files(parents,name, id, mimeType)").execute()
     items = results.get("files", [])
+
     parents = []
     for item in items:
         validate_model(item["name"], item["id"])
@@ -283,15 +286,18 @@ def verify_data(data):
         # busco el sku en el modelo 
         cur = conn.cursor()
         cur.execute(cadena) 
-        sku = cur.fetchone()   
-        if(sku):
+        result = cur.fetchone() 
+        if(result):
+            sku = result[0]
+            #print(f' se ejecutara para el sku : {sku}')
             id_foto = save_files_into_db(data)
-            print(f' id_foto encontrado : {id_foto}')
+            #print(f' id_foto encontrado : {id_foto}')
             cadena = f'UPDATE "{tabla}" SET "fotosId"={id_foto}  where sku=\'{data["sku"]}\';' 
+            print(f' ejecutando : {cadena}')
             cur.execute(cadena)
         else:
             id_foto = save_files_into_db(data)
-            print(f' id_foto encontrado : {id_foto}')
+            print(f' id_foto procesado : {id_foto}')
             log = f' sku NO encontrado : {data["sku"]} en el producto: {data["product"]} en la tabla: {tabla} '
             write_log(log)
             print(f' sku NO encontrado : {data["sku"]} en el producto: {data["product"]} en la tabla: {tabla} ')
@@ -300,6 +306,8 @@ def verify_data(data):
         conn.commit()  
         cur.close()       
     except (Exception, psycopg2.DatabaseError) as error:
+        conn.rollback()
+        cur.close() 
         log = f' verificando si existe el archivo : {data["sku"]} genero el error: {error} '
         write_log(log)
         print(log)
@@ -309,13 +317,26 @@ def save_files_into_db(data):
     try:
         # inserto en tabla CatalogoFotos y DetalleFotos
         cur = conn.cursor()
-        cur.execute('INSERT INTO "CatalogoFotos" (sku, model, created_at) VALUES (%s, %s , NOW()) RETURNING id ;', (data["sku"], data["model"]))    
-        # Obtener el ID del registro insertado
-        id_insertado = cur.fetchone()[0]
-        cur.execute('INSERT INTO "DetalleFotos" ( type, "fileName", url, product, sku, size, model, "idCatalogoFotos", created_at) VALUES (%s, %s ,%s, %s ,%s, %s, %s, %s , NOW());', (data["type"], data["fileName"], data["url"], data["product"], data["sku"], data["size"] ,data["model"], id_insertado))
-        conn.commit()  
-        cur.close()  
-        return id_insertado     
+        #print(f' ejecutando : ')
+        #print('select id from "CatalogoFotos" where sku=%s;', (data["sku"],))
+        # Validamos si el sku ya existe en la tabla CatalogoFotos
+        cur.execute('select id from "CatalogoFotos" where sku=%s;', (data["sku"],))
+        result = cur.fetchone()
+        if result:  # Verifica si result no es None
+            id_catalogo = result[0]
+            cur.execute('INSERT INTO "DetalleFotos" ( type, "fileName", url, product, sku, size, model, "idCatalogoFotos", created_at) VALUES (%s, %s ,%s, %s ,%s, %s, %s, %s , NOW());', (data["type"], data["fileName"], data["url"], data["product"], data["sku"], data["size"] ,data["model"], id_catalogo))
+            conn.commit()  
+            cur.close()
+            return id_catalogo  
+        else:
+            cur.execute('INSERT INTO "CatalogoFotos" (sku, model, created_at) VALUES (%s, %s , NOW()) RETURNING id ;', (data["sku"], data["model"]))    
+            # Obtener el ID del registro insertado
+            id_insertado = cur.fetchone()[0]
+            cur.execute('INSERT INTO "DetalleFotos" ( type, "fileName", url, product, sku, size, model, "idCatalogoFotos", created_at) VALUES (%s, %s ,%s, %s ,%s, %s, %s, %s , NOW());', (data["type"], data["fileName"], data["url"], data["product"], data["sku"], data["size"] ,data["model"], id_insertado))
+            conn.commit()  
+            cur.close()  
+            return id_insertado    
+        print(f' id_catalogo es : {id_catalogo}')
     except (Exception, psycopg2.DatabaseError) as error:
         log = f' salvando en la BD la informacion del sku : {data["sku"]} genero el error: {error} '
         write_log(log)
@@ -327,9 +348,32 @@ def add_files_in_folder(folder_id, archivos, parent="", product="", name="" ):
     """Lista todos los archivos y carpetas en la carpeta especificada en Google Drive"""
     archivosinternos=0
     query = f"'{folder_id}' in parents and trashed = false"
+    page_token = None
+    items = []
+    while True:
+        results = service.files().list(
+            q=query,
+            fields="nextPageToken, files(parents,name, id, mimeType)",
+            pageToken=page_token
+        ).execute()
+        
+        items += results.get("files", [])
+        page_token = results.get("nextPageToken")
+
+        if not page_token:
+            break
+
+
+    '''
     results = service.files().list(q=query, fields="nextPageToken, files(parents,name, id, mimeType)").execute()
     items = results.get("files", [])
+       '''
     parents = []
+    num_elementos = len(items)
+    log = f"La carpeta tiene {num_elementos} elementos."
+    #write_log(log)
+    print(log)
+ 
     for item in items:
         validate_model(name, folder_id)
    
@@ -425,8 +469,9 @@ def get_folders(folder_id):
 
 
 def write_log(cadena):
+    global archivo_procesar
     fecha = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    nombre_archivo = 'logs/log_' + fecha[:10] + uuid_log + '.txt'  
+    nombre_archivo = 'logs/log_' + fecha[:10] + "-" + archivo_procesar.replace(" ", "") + "-" + uuid_log + '.txt'  
     # crea la carpeta si no existe
     os.makedirs(os.path.dirname(nombre_archivo), exist_ok=True) 
     with open(nombre_archivo, 'a') as archivo:
@@ -466,6 +511,7 @@ def eliminar_carpeta_s3(bucket_name, carpeta_a_eliminar):
 
 
 def main():
+    global archivo_procesar
     # Definir los argumentos que puede recibir el script
     parser = argparse.ArgumentParser(description='Este script Toma imagenes cargadas en una carpeta de google drive y las sube a s3 ')
     parser.add_argument('action', type=str, choices=['new', 'add'], help='Acción a realizar')
@@ -490,6 +536,7 @@ def main():
                 #archivos = archivos + add_files_in_folder(file["uuid"],  archivos )
         else:
             file = files[int(idFile)-1]
+            archivo_procesar=file["name"]
             print(f'Entrando a la carpeta : {file["name"]}')
             archivos = add_files_in_folder(file["uuid"],  archivos, name = file["name"] )
 

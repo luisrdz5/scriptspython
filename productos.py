@@ -427,6 +427,7 @@ def clear_screen():
 
 def main():
     global nombre_archivo
+    clear_screen()
     print(f'this is an aplication that  walks through the product files')
     print(f'please select the file')
     print(f' A .- All')
