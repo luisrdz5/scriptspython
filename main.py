@@ -179,7 +179,13 @@ models_catalog_str= [
         "model": "AccesoriosCamioneta",
         "tabla":"accesoriosCamioneta",
         "google_id": ""
-    }             
+    },
+    {
+        "name": "COMPONENTES",
+        "model": "Componentes",
+        "tabla":"Componentes",
+        "google_id": ""
+    }       
 
 ]
 
@@ -387,24 +393,15 @@ def add_files_in_folder(folder_id, archivos, parent="", product="", name="" ):
             file_name = file_name.replace('_Ig.', '_lg.')
             # Validar si la foto ya existe en AWS S3
             s3_file_key = f'{bucket_name}/{file_name.split(".")[0]}.png'
-            '''
-            try:
-                print (f'verificando si existe el archivo : {s3_file_key} en S3')
-                s3_client.head_object(Bucket=bucket_name, Key=s3_file_key)
-                log = f'Archivo {item["name"]} ya existe en S3. No se subirá nuevamente.'
-                print(log)
-                write_log(log)
-                continue  # Saltar a la siguiente iteración del bucle sin subir el archivo nuevamente
-            except (Exception) as error:
-                # El archivo no existe en S3, continuar con la subida
-                log = f' archivo no encontrado en S3 : {s3_file_key}  '
-                write_log(log)
-                pass            
-            
-            '''
 
             #validamos la estructura 
             try:
+                model= get_model(parent)
+                if model is None or not model:
+                    log = "El modelo no fue encontrado, se debe agregar al arreglo models_catalog_str saliendo del ciclo..."
+                    write_log(log)
+                    print(log)
+                    return 0
                 # Obtener el contenido del archivo y convertir a png
                 file_content = service.files().get_media(fileId=file_id).execute()
                 img = Image.open(io.BytesIO(file_content))
@@ -416,12 +413,17 @@ def add_files_in_folder(folder_id, archivos, parent="", product="", name="" ):
                 s3_client.upload_fileobj(png_content, bucket_name, s3_file_key, ExtraArgs={'ACL': 'public-read'}) 
                 url=f'https://{bucket_name}.s3.amazonaws.com/{s3_file_key}'
                 archivos += 1
-                print(f'Archivo {item["name"]} subido a S3.')
+                #print(f'Archivo {item["name"]} subido a S3.')
+                print(f'Archivo {file_name} subido a S3.')
                 # Obtengo el id de la carpeta padre
                 model= get_model(parent)
                 size = file_name.split("_")[2].split(".")[0]
                 sku = file_name.split("_")[0]
                 id_image = file_name.split("_")[1].split(".")[0]
+                #print(f'Se manda s3_key: {s3_file_key.split(".")[1]}  size: {size}   sku: {sku}   id_image:  {id_image} subido a S3.')
+                #print(f'Se manda model[0]: {model[0]}  model[1]: {model[1]}   model[2]: {model[2]} subido a S3.')
+                #print(f'Se manda model: {model}')
+
                 data = {
                     'type':s3_file_key.split(".")[1],
                     'fileName':file_name,
@@ -433,6 +435,7 @@ def add_files_in_folder(folder_id, archivos, parent="", product="", name="" ):
                     'tabla': model[2],
                     'id_image': id_image,
                 }
+                #print(f'Se manda data: {data}')
                 verify_data(data)
                 log = f' el archivo : {file_name} se ha cargado correctamente '
                 write_log(log)
