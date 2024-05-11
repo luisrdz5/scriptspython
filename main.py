@@ -67,6 +67,12 @@ models_catalog_str= [
         "google_id": ""
     },
     {
+        "name": "ESTEREOS (2022)",
+        "model": "Estereos",
+        "tabla":"Estereos",
+        "google_id": ""
+    },
+    {
         "name": "BOCINAS",
         "model": "Bocinas",
         "tabla":"Bocinas",
