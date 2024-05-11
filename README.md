@@ -50,7 +50,7 @@ Se debera ejecutar el comando:
 git clone git@github.com:luisrdz5/scriptspython.git
 python3 -m venv env
 source env/bin/activate
-pip3 install -r requirements.txt
+pip3 install -r requeriments.txt
 python3 main.py add
 ```
 

@@ -126,16 +126,7 @@ products_catalog_str= [
     },{
         "name": "ILUMINACION para csv",
         "table":"iluminacion",
-    },
-
-
-
-
-
-
-
-    
-                   
+    },            
 ]
 
 
@@ -364,6 +355,7 @@ def upload_dataframe(filas, table, nombre_archivo):
                     if isinstance(value, int):
                         cadenaValues = cadenaValues + cadenacoma + "'" +  str(value) + "'"
                     else:
+                        value = value[:254]
                         cadenaValues = cadenaValues + cadenacoma + "'" + str(value.replace('\'', '').replace('\"', '')) + "'"
                         
                    
