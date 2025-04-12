@@ -202,65 +202,70 @@ def validar_dataframe(filas, table, nombre_archivo):
     error = False
     errores = 0 
     cadena = f" ******* Se ha iniciado la validación del archivo {nombre_archivo} contra la tabla {table} ********** \n"
-    print(cadena);
+    print(cadena)
     write_log(cadena)
     try:
-        # Realiza las validaciones en el DataFrame
         cursor = conn.cursor()
-        query= f"SELECT column_name, data_type  FROM information_schema.columns WHERE table_name = '{table}'"
-        cursor.execute(query)
+        # Solo obtenemos los tipos de datos en orden
+        query = """
+            SELECT data_type
+            FROM information_schema.columns 
+            WHERE table_name = %s
+            ORDER BY ordinal_position;
+        """
+        cursor.execute(query, (table,))
         schema = cursor.fetchall()
         num_columns_postgres = len(schema)
+        
+        # Validar número de columnas
+        if len(filas[0]) != num_columns_postgres:
+            write_log(f"El número de columnas no coincide. Archivo: {len(filas[0])}, PostgreSQL: {num_columns_postgres}")
+            return False
+
+        # Validar tipos de datos por cada fila
         for i, row in enumerate(filas[1:], start=2):
-            # Comprueba si el número de columnas en la fila coincide con el número de columnas en la tabla PostgreSQL
             if len(row) != num_columns_postgres:
-                write_log(f" La fila {i} no coincide con el número de columnas en la tabla PostgreSQL. ya que el google sheet tiene {len(row)} y la base de datos tiene {num_columns_postgres}")
-                errores = errores + 1
+                write_log(f"La fila {i} tiene un número incorrecto de columnas: {len(row)}")
+                errores += 1
                 error = True
                 continue
-            else:
-                 write_log(f"La fila {i} si coincide con el número de columnas en la tabla PostgreSQL.")
 
             for j, value in enumerate(row):
-                column_name = schema[j][0]
-                column_type = schema[j][1]
-
+                column_type = schema[j][0]
+                
                 # Si el valor está vacío, saltamos la validación
                 if value == '':
                     continue
                 
+                # Validar tipo de dato
                 if column_type == "integer":
                     try:
                         int(value)
                     except ValueError:
-                        write_log(f"El valor {value} en la fila {i}, columna {column_name} no es un integer válido.")
+                        write_log(f"Error en fila {i}, columna {j+1}: '{value}' no es un integer válido")
                         error = True
-                        errores = errores + 1
+                        errores += 1
                 elif column_type == "text":
-                    if not isinstance(value, str):
-                        write_log(f"El valor {value} en la fila {i}, columna {column_name} no es un string válido.")
+                    if len(str(value)) > 254:
+                        write_log(f"Error en fila {i}, columna {j+1}: texto excede 254 caracteres")
                         error = True
-                        errores = errores + 1
-                    if len(value) > 254:
-                        write_log(f"El valor {value} en la fila {i}, columna {column_name} sobrepasa la longitud maxima de strings (255).")
-                        error = True
-                        errores = errores + 1                        
+                        errores += 1
                 elif column_type == "boolean":
-                    if value.lower() not in ["true", "false", "1", "0"]:
-                        write_log(f"El valor {value} en la fila {i}, columna {column_name} no es un boolean válido.")
+                    if str(value).lower() not in ["true", "false", "1", "0"]:
+                        write_log(f"Error en fila {i}, columna {j+1}: '{value}' no es un boolean válido")
                         error = True
-                        errores = errores + 1
-                # Se pueden agregar aquí más tipos de datos según sea necesario
+                        errores += 1
 
-        cursor.close()  
-        # Si todas las validaciones pasan, retorna True  
-        if error == False :
-          write_log(f" ******* No se encontro error en la validación del archivo {nombre_archivo} contra la tabla {table} ********** \n")
+        if error:
+            write_log(f"Se encontraron {errores} errores en la validación")
         else:
-            write_log(f" ******* Se encontraron {errores} errores en la validación del archivo {nombre_archivo} contra la tabla {table} ********** \n")
+            write_log("Validación completada sin errores")
+            
         return not error
-    except (Exception) as error:
+
+    except Exception as error:
         print(error)
+        write_log(f"Error en la validación: {str(error)}")
         return False
 
 
@@ -276,7 +281,6 @@ def update_database_with_file(idFile, files):
         filas = fileSheet.get_all_values()
         
         validate = upload_dataframe(filas, tableSheet["table"], nombre_archivo )
-
         if validate :
             print (f"Ha sido correcta la actualización de la tabla {tableSheet['table']} desde el  archivo {nombre_archivo}  ")
             write_log(f"Ha sido correcta la actualización de la tabla {tableSheet['table']} desde el  archivo {nombre_archivo}  ")
@@ -302,7 +306,8 @@ def upload_dataframe(filas, table, nombre_archivo):
         cur.execute("""
             SELECT column_name
             FROM information_schema.columns 
-            WHERE table_name = %s;
+            WHERE table_name = %s
+            ORDER BY ordinal_position;
         """, (table,))
         schema = cur.fetchall()
         cur.execute(f'TRUNCATE TABLE "{table}"')
