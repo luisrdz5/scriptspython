@@ -43,10 +43,11 @@ service = build("drive", "v3", credentials=creds)
 
 # Establecer la conexión con la base de datos
 conn = psycopg2.connect(
-    host= os.environ["DB_HOST"],
-    database= os.environ["DB_NAME"],
-    user= os.environ["DB_USER"],
-    password= os.environ["DB_PASSWORD"]
+    host=os.environ["DB_HOST"],
+    database=os.environ["DB_NAME"],
+    user=os.environ["DB_USER"],
+    password=os.environ["DB_PASSWORD"],
+    port=os.environ.get("DB_PORT", "5432")  # Usa 5432 como valor predeterminado si DB_PORT no está definido
 )
 
 
